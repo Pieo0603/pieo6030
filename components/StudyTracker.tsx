@@ -1,20 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { db, auth, googleProvider } from '../services/firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import React, { useState, useEffect } from 'react';
+import { db } from '../services/firebase';
 import { collection, addDoc, query, orderBy, onSnapshot, limit, where, getDocs } from 'firebase/firestore';
-import { StudyLog, ThemeConfig, LeaderboardEntry } from '../types';
-import { Play, Pause, Square, CheckCircle, Clock, BookOpen, LogOut, LayoutList, Trophy, User as UserIcon, AlertCircle, ArrowRight, Quote, History, Calendar, Medal, BarChart3, ChevronRight } from 'lucide-react';
+import { StudyLog, ThemeConfig, LeaderboardEntry, AppUser } from '../types';
+import { Play, Pause, Square, CheckCircle, Clock, BookOpen, LogOut, LayoutList, Trophy, User as UserIcon, AlertCircle, ArrowRight, History, Lock } from 'lucide-react';
 
 interface StudyTrackerProps {
   theme: ThemeConfig;
-}
-
-// Custom User Type
-interface AppUser {
-    uid: string;
-    displayName: string | null;
-    photoURL: string | null;
-    isAnonymous?: boolean;
+  user: AppUser | null; // Receive user from App
 }
 
 const SUBJECTS = [
@@ -36,8 +28,7 @@ const MOTIVATIONAL_QUOTES = [
 
 type TabView = 'timer' | 'leaderboard' | 'profile';
 
-const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
-  const [user, setUser] = useState<AppUser | null>(null);
+const StudyTracker: React.FC<StudyTrackerProps> = ({ theme, user }) => {
   const [activeTab, setActiveTab] = useState<TabView>('timer');
   
   // Data States
@@ -57,25 +48,6 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
   const [targetMinutes, setTargetMinutes] = useState(30);
   const [notes, setNotes] = useState('');
   const [isSessionActive, setIsSessionActive] = useState(false);
-
-  // Manual Login State
-  const [showManualLogin, setShowManualLogin] = useState(false);
-  const [manualName, setManualName] = useState("");
-
-  // Auth Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-          setUser({
-              uid: currentUser.uid,
-              displayName: currentUser.displayName,
-              photoURL: currentUser.photoURL,
-              isAnonymous: false
-          });
-      }
-    });
-    return () => unsubscribe();
-  }, []);
 
   // 1. Fetch Recent Logs (for "Realtime" list) & Leaderboard Calculation
   useEffect(() => {
@@ -161,39 +133,9 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
     return () => clearInterval(interval);
   }, [isTimerRunning]);
 
-  const handleGoogleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      console.error("Google Login failed", error);
-      setShowManualLogin(true);
-    }
-  };
-
-  const handleManualLogin = (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!manualName.trim()) return;
-      const fakeUser: AppUser = {
-          uid: 'guest-' + Date.now(),
-          displayName: manualName,
-          photoURL: `https://api.dicebear.com/7.x/notionists/svg?seed=${manualName}`,
-          isAnonymous: true
-      };
-      setUser(fakeUser);
-      setShowManualLogin(false);
-  };
-
-  const handleLogout = () => {
-    if (!user?.isAnonymous) signOut(auth);
-    setUser(null);
-    setIsSessionActive(false);
-    setIsTimerRunning(false);
-    setShowManualLogin(false);
-  };
-
   const startSession = () => {
     if (!user) {
-      alert("Bạn cần đăng nhập để bắt đầu tính giờ!");
+      alert("Bạn chưa đăng nhập! Vui lòng bấm nút 'Đăng nhập' ở góc trên bên trái màn hình.");
       return;
     }
     if (targetMinutes <= 0) {
@@ -245,7 +187,8 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
       return (
           <div className="relative bg-[#050505] rounded-lg w-36 h-52 md:w-72 md:h-[26rem] flex items-center justify-center overflow-hidden border border-[#222]">
              <div className="absolute top-1/2 left-0 w-full h-[2px] bg-[#000] z-10"></div>
-             <span className="font-mono text-[5.5rem] md:text-[15rem] font-bold text-[#e6e6e6] z-0 tracking-tighter leading-none">
+             {/* Changed font-mono to font-heading (Outfit) for better aesthetics */}
+             <span className="font-heading text-[5.5rem] md:text-[15rem] font-bold text-[#e6e6e6] z-0 tracking-tighter leading-none">
                  {valStr}
              </span>
              <div className="absolute top-1/2 left-0 w-1 md:w-2 h-2 md:h-4 bg-[#111] rounded-r-full -translate-y-1/2 z-20"></div>
@@ -295,7 +238,7 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
                       </div>
                   </div>
                   <div className="text-center max-w-xl h-12">
-                      <p className="text-white/50 text-sm italic font-serif transition-opacity duration-1000">"{currentQuote}"</p>
+                      <p className="text-white/80 text-lg md:text-2xl font-hand transition-opacity duration-1000">"{currentQuote}"</p>
                   </div>
                   <div className="flex justify-center gap-8 mt-2">
                       {!isTimerRunning ? (
@@ -319,66 +262,32 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
   }
 
   // ----------------------------------------------------------------------
-  // VIEW: LOGIN SCREEN (If not logged in)
-  // ----------------------------------------------------------------------
-  if (!user) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 px-4 text-center animate-in fade-in duration-500">
-        <div className={`p-8 glass-panel rounded-2xl max-w-md w-full shadow-2xl ${theme.shadow} border-t border-white/10 transition-all duration-500 hover-shine`}>
-           <div className="mb-6 bg-white/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto animate-pulse">
-              <UserIcon size={40} className="text-white" />
-           </div>
-           
-           {!showManualLogin ? (
-               <>
-                   <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">Đăng nhập để học tập</h2>
-                   <p className="text-gray-400 mb-8 text-sm leading-relaxed">Tham gia cùng cộng đồng sĩ tử 2026. Bấm giờ, lưu lịch sử và thi đua.</p>
-                   <div className="space-y-3">
-                       <button onClick={handleGoogleLogin} className={`w-full py-3.5 rounded-xl bg-white text-gray-900 font-bold flex items-center justify-center gap-3 hover:bg-gray-100 transition-all shadow-lg`}>
-                         <span className="font-bold">G</span> Đăng nhập Google
-                       </button>
-                       <button onClick={() => setShowManualLogin(true)} className="w-full py-3 rounded-xl bg-white/10 text-white font-medium hover:bg-white/20 transition-all text-sm">
-                         Không đăng nhập được? Nhập tên ngay
-                       </button>
-                   </div>
-               </>
-           ) : (
-               <form onSubmit={handleManualLogin} className="animate-in fade-in slide-in-from-bottom-4 duration-300">
-                   <h2 className="text-xl font-bold text-white mb-4">Nhập thông tin sĩ tử</h2>
-                   <div className="mb-4 text-left">
-                       <label className="text-xs text-gray-400 font-semibold ml-1">Biệt danh của bạn</label>
-                       <input type="text" autoFocus placeholder="VD: Thủ khoa khối A00" value={manualName} onChange={(e) => setManualName(e.target.value)} className={`w-full mt-1 bg-black/30 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-${theme.hex} transition-colors`} />
-                   </div>
-                   <div className="flex gap-3">
-                       <button type="button" onClick={() => setShowManualLogin(false)} className="flex-1 py-3 rounded-xl bg-gray-700 text-gray-300 font-bold hover:bg-gray-600 transition-all">Quay lại</button>
-                       <button type="submit" className={`flex-1 py-3 rounded-xl bg-gradient-to-r ${theme.buttonGradient} text-white font-bold shadow-lg hover:opacity-90 transition-all flex items-center justify-center gap-2`}>Vào học <ArrowRight size={16} /></button>
-                   </div>
-               </form>
-           )}
-        </div>
-      </div>
-    );
-  }
-
-  // ----------------------------------------------------------------------
-  // MAIN APP VIEW (LOGGED IN)
+  // MAIN APP VIEW (LOGGED IN or NOT - CONTENT ALWAYS VISIBLE)
   // ----------------------------------------------------------------------
   return (
     <div className="w-full max-w-6xl mx-auto px-4 pb-10">
        
        {/* USER GREETING & HEADER (More Compact) */}
-       <div className="flex justify-between items-center mb-6">
-           <div className="flex items-center gap-3">
-                <img src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}`} alt="User" className="w-10 h-10 rounded-full border border-white/20" />
-                <div>
-                    <h3 className="text-base font-bold text-white leading-tight">{user.displayName}</h3>
-                    <p className={`text-[10px] uppercase font-bold tracking-wider ${theme.text}`}>Chiến binh 2026</p>
+       {user ? (
+           <div className="flex justify-between items-center mb-6 animate-in slide-in-from-left-4 duration-300">
+                <div className="flex items-center gap-3">
+                        <img src={user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.displayName}`} alt="User" className="w-10 h-10 rounded-full border border-white/20" />
+                        <div>
+                            <h3 className="text-base font-bold text-white leading-tight">{user.displayName}</h3>
+                            <p className={`text-[10px] uppercase font-bold tracking-wider ${theme.text}`}>Chiến binh 2026</p>
+                        </div>
                 </div>
+                {/* Logout is handled in App.tsx Header now, but we can keep a note or leave blank */}
            </div>
-           <button onClick={handleLogout} className="p-2 bg-white/5 rounded-full text-gray-400 hover:text-white hover:bg-white/10" title="Đăng xuất">
-                <LogOut size={16} />
-           </button>
-       </div>
+       ) : (
+           <div className="mb-6 p-4 rounded-xl bg-orange-500/10 border border-orange-500/30 flex items-center gap-3 animate-in fade-in duration-300">
+               <div className="p-2 bg-orange-500/20 rounded-full"><Lock size={16} className="text-orange-400" /></div>
+               <div>
+                   <h3 className="text-sm font-bold text-white">Chế độ xem trước</h3>
+                   <p className="text-xs text-gray-400">Bạn cần đăng nhập (Góc trái) để lưu lịch sử và tính giờ học.</p>
+               </div>
+           </div>
+       )}
 
        {/* SUB-TABS (Clean segmented control) */}
        <div className="grid grid-cols-3 gap-1 bg-black/30 p-1 rounded-xl mb-6 border border-white/5">
@@ -399,9 +308,9 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
        {activeTab === 'timer' && (
            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
               <div className="lg:col-span-1">
-                 <div className={`hover-shine glass-panel p-5 rounded-2xl shadow-xl ${theme.shadow} border-t border-white/10 sticky top-24`}>
+                 <div className={`hover-shine glass-panel p-5 rounded-2xl shadow-xl ${theme.shadow} border-t border-white/10 sticky top-24 ${!user ? 'opacity-70 grayscale' : ''}`}>
                     <h3 className={`text-lg font-bold mb-4 flex items-center gap-2 ${theme.text}`}>
-                       <Play size={20} /> Thiết lập buổi học
+                       <Play size={20} /> Thiết lập Hẹn Giờ
                     </h3>
                     <div className="space-y-5">
                        <div>
@@ -432,8 +341,10 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
                           <label className="block text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-wider">Mục tiêu hôm nay</label>
                           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="VD: Giải hết đề Toán 2024..." className="w-full bg-black/20 border border-gray-700 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-white/50 resize-none h-20" />
                        </div>
+                       
+                       {/* START BUTTON with Auth Check */}
                        <button onClick={startSession} className={`w-full py-3.5 rounded-xl bg-gradient-to-r ${theme.buttonGradient} text-white font-bold shadow-lg transform hover:-translate-y-1 transition-all flex items-center justify-center gap-2 text-base`}>
-                         <Play size={18} fill="currentColor" /> BẮT ĐẦU NGAY
+                         {user ? <><Play size={18} fill="currentColor" /> BẮT ĐẦU NGAY</> : <><Lock size={18} /> ĐĂNG NHẬP ĐỂ BẮT ĐẦU</>}
                        </button>
                     </div>
                  </div>
@@ -450,7 +361,7 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
                            <img src={log.userAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${log.userName}`} alt="avt" className="w-9 h-9 rounded-full border border-gray-600" />
                            <div className="flex-grow min-w-0">
                                <div className="flex justify-between items-baseline">
-                                  <span className={`font-bold text-sm truncate pr-2 ${log.userId === user.uid ? theme.text : 'text-white'}`}>{log.userName}</span>
+                                  <span className={`font-bold text-sm truncate pr-2 ${user && log.userId === user.uid ? theme.text : 'text-white'}`}>{log.userName}</span>
                                   <span className="text-[10px] text-gray-500 flex-shrink-0">{new Date(log.timestamp).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})}</span>
                                </div>
                                <div className="text-xs text-gray-400 mt-0.5 flex items-center gap-2 truncate">
@@ -491,7 +402,7 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
                    {leaderboard[0] && (
                        <div className="hover-shine w-1/3 max-w-[160px] bg-[#222] rounded-t-xl p-3 md:p-8 flex flex-col items-center border-t-4 border-yellow-400 pb-8 md:pb-10 shadow-2xl shadow-yellow-500/10 z-10 relative -top-4 md:-top-0">
                            <div className="absolute -top-4 md:-top-6 w-8 h-8 md:w-12 md:h-12 bg-yellow-400 rounded-full flex items-center justify-center font-bold text-black shadow-lg text-sm md:text-xl">1</div>
-                           <Medal className="text-yellow-400 mb-1 md:mb-2 w-4 h-4 md:w-8 md:h-8" />
+                           <Trophy className="text-yellow-400 mb-1 md:mb-2 w-4 h-4 md:w-8 md:h-8" />
                            <img src={leaderboard[0].userAvatar} className="w-16 h-16 md:w-24 md:h-24 rounded-full border-2 md:border-4 border-yellow-400 mb-2 md:mb-4 object-cover" alt="Top 1" />
                            <h3 className="font-bold text-xs md:text-xl text-white line-clamp-1 w-full text-center">{leaderboard[0].userName}</h3>
                            <div className="mt-2 bg-gradient-to-r from-yellow-600 to-orange-600 px-3 py-1 md:px-6 md:py-2 rounded-full text-white font-mono font-bold text-xs md:text-lg shadow-lg">{leaderboard[0].totalMinutes}p</div>
@@ -530,88 +441,94 @@ const StudyTracker: React.FC<StudyTrackerProps> = ({ theme }) => {
        {/* 3. PROFILE / HISTORY TAB */}
        {activeTab === 'profile' && (
            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                   {/* User Stat Card */}
-                   <div className="md:col-span-1">
-                       <div className="hover-shine glass-panel p-6 rounded-2xl text-center sticky top-24">
-                           <div className="relative inline-block mb-4">
-                                <img src={user.photoURL || ""} className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white/10" alt="Me" />
-                                <div className="absolute bottom-0 right-0 bg-green-500 w-5 h-5 rounded-full border-2 border-black"></div>
-                           </div>
-                           <h2 className="text-xl md:text-2xl font-bold text-white mb-1">{user.displayName}</h2>
-                           
-                           <div className="grid grid-cols-2 gap-3 text-left mt-6">
-                               <div className="bg-white/5 p-3 rounded-xl">
-                                   <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Tổng giờ học</p>
-                                   <p className="text-lg md:text-xl font-bold text-white flex items-baseline gap-1">
-                                       {userHistory.reduce((acc, curr) => acc + curr.durationMinutes, 0)} <span className="text-[10px] font-normal text-gray-400">phút</span>
-                                   </p>
+               {user ? (
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                       {/* User Stat Card */}
+                       <div className="md:col-span-1">
+                           <div className="hover-shine glass-panel p-6 rounded-2xl text-center sticky top-24">
+                               <div className="relative inline-block mb-4">
+                                    <img src={user.photoURL || ""} className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-white/10" alt="Me" />
+                                    <div className="absolute bottom-0 right-0 bg-green-500 w-5 h-5 rounded-full border-2 border-black"></div>
                                </div>
-                               <div className="bg-white/5 p-3 rounded-xl">
-                                   <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Số buổi</p>
-                                   <p className="text-lg md:text-xl font-bold text-white">{userHistory.length}</p>
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-
-                   {/* History List */}
-                   <div className="md:col-span-2">
-                       <div className="flex items-center gap-2 mb-4">
-                           <History className={theme.text} size={18} />
-                           <h3 className="text-lg font-bold text-white">Lịch sử rèn luyện</h3>
-                       </div>
-                       
-                       <div className="space-y-3 relative">
-                           {/* Timeline line */}
-                           <div className="absolute left-3.5 top-3 bottom-3 w-0.5 bg-gray-800 z-0"></div>
-
-                           {userHistory.map((log) => (
-                               <div key={log.id} className="relative z-10 pl-9 group">
-                                   {/* Timeline Dot */}
-                                   <div className={`absolute left-[10px] top-4 w-2.5 h-2.5 rounded-full border-2 border-[#0f0c29] ${log.isCompleted ? 'bg-green-500' : 'bg-orange-500'}`}></div>
-                                   
-                                   <div className="hover-shine glass-panel p-4 rounded-xl border border-white/5 hover:border-white/20 transition-all">
-                                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                                           <div className="flex items-center gap-2">
-                                                <span className="bg-white/10 text-[10px] font-bold px-2 py-0.5 rounded text-gray-300">{log.subject}</span>
-                                                <span className="text-[10px] text-gray-500 flex items-center gap-1 font-medium">
-                                                    {new Date(log.timestamp).toLocaleDateString('vi-VN', {day:'2-digit', month:'2-digit'})}
-                                                    {' • '}
-                                                    {new Date(log.timestamp).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})}
-                                                </span>
-                                           </div>
-                                           <div className="flex items-center gap-2">
-                                               {log.isCompleted ? (
-                                                   <span className="text-[10px] font-bold text-green-400 flex items-center gap-1"><CheckCircle size={12} /> Đạt</span>
-                                               ) : (
-                                                   <span className="text-[10px] font-bold text-orange-400 flex items-center gap-1"><AlertCircle size={12} /> Miss</span>
-                                               )}
-                                           </div>
-                                       </div>
-                                       
-                                       <div className="flex items-baseline gap-1 mb-1">
-                                           <span className="text-xl font-bold text-white">{log.durationMinutes}</span>
-                                           <span className="text-xs text-gray-500">/ {log.targetMinutes} phút</span>
-                                       </div>
-
-                                       {log.notes && (
-                                           <div className="mt-2 pt-2 border-t border-white/5 text-xs text-gray-400 italic">
-                                               "{log.notes}"
-                                           </div>
-                                       )}
+                               <h2 className="text-xl md:text-2xl font-bold text-white mb-1">{user.displayName}</h2>
+                               
+                               <div className="grid grid-cols-2 gap-3 text-left mt-6">
+                                   <div className="bg-white/5 p-3 rounded-xl">
+                                       <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Tổng giờ học</p>
+                                       <p className="text-lg md:text-xl font-bold text-white flex items-baseline gap-1">
+                                           {userHistory.reduce((acc, curr) => acc + curr.durationMinutes, 0)} <span className="text-[10px] font-normal text-gray-400">phút</span>
+                                       </p>
+                                   </div>
+                                   <div className="bg-white/5 p-3 rounded-xl">
+                                       <p className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">Số buổi</p>
+                                       <p className="text-lg md:text-xl font-bold text-white">{userHistory.length}</p>
                                    </div>
                                </div>
-                           ))}
+                           </div>
+                       </div>
 
-                           {userHistory.length === 0 && (
-                               <div className="pl-10 py-10">
-                                   <p className="text-gray-500 text-sm">Bạn chưa có buổi học nào. Hãy bắt đầu ngay!</p>
-                               </div>
-                           )}
+                       {/* History List */}
+                       <div className="md:col-span-2">
+                           <div className="flex items-center gap-2 mb-4">
+                               <History className={theme.text} size={18} />
+                               <h3 className="text-lg font-bold text-white">Lịch sử rèn luyện</h3>
+                           </div>
+                           
+                           <div className="space-y-3 relative">
+                               {/* Timeline line */}
+                               <div className="absolute left-3.5 top-3 bottom-3 w-0.5 bg-gray-800 z-0"></div>
+
+                               {userHistory.map((log) => (
+                                   <div key={log.id} className="relative z-10 pl-9 group">
+                                       {/* Timeline Dot */}
+                                       <div className={`absolute left-[10px] top-4 w-2.5 h-2.5 rounded-full border-2 border-[#0f0c29] ${log.isCompleted ? 'bg-green-500' : 'bg-orange-500'}`}></div>
+                                       
+                                       <div className="hover-shine glass-panel p-4 rounded-xl border border-white/5 hover:border-white/20 transition-all">
+                                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                                               <div className="flex items-center gap-2">
+                                                    <span className="bg-white/10 text-[10px] font-bold px-2 py-0.5 rounded text-gray-300">{log.subject}</span>
+                                                    <span className="text-[10px] text-gray-500 flex items-center gap-1 font-medium">
+                                                        {new Date(log.timestamp).toLocaleDateString('vi-VN', {day:'2-digit', month:'2-digit'})}
+                                                        {' • '}
+                                                        {new Date(log.timestamp).toLocaleTimeString('vi-VN', {hour:'2-digit', minute:'2-digit'})}
+                                                    </span>
+                                               </div>
+                                               <div className="flex items-center gap-2">
+                                                   {log.isCompleted ? (
+                                                       <span className="text-[10px] font-bold text-green-400 flex items-center gap-1"><CheckCircle size={12} /> Đạt</span>
+                                                   ) : (
+                                                       <span className="text-[10px] font-bold text-orange-400 flex items-center gap-1"><AlertCircle size={12} /> Miss</span>
+                                                   )}
+                                               </div>
+                                           </div>
+                                           
+                                           <div className="flex items-baseline gap-1 mb-1">
+                                               <span className="text-xl font-bold text-white">{log.durationMinutes}</span>
+                                               <span className="text-xs text-gray-500">/ {log.targetMinutes} phút</span>
+                                           </div>
+
+                                           {log.notes && (
+                                               <div className="mt-2 pt-2 border-t border-white/5 text-xs text-gray-400 italic">
+                                                   "{log.notes}"
+                                               </div>
+                                           )}
+                                       </div>
+                                   </div>
+                               ))}
+
+                               {userHistory.length === 0 && (
+                                   <div className="pl-10 py-10">
+                                       <p className="text-gray-500 text-sm">Bạn chưa có buổi học nào. Hãy bắt đầu ngay!</p>
+                                   </div>
+                               )}
+                           </div>
                        </div>
                    </div>
-               </div>
+               ) : (
+                   <div className="text-center py-20 text-gray-500">
+                       Vui lòng đăng nhập để xem hồ sơ cá nhân.
+                   </div>
+               )}
            </div>
        )}
     </div>

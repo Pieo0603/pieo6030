@@ -1,3 +1,4 @@
+
 export interface Message {
   id: string;
   author: string;
@@ -35,6 +36,14 @@ export interface ThemeConfig {
   inputFocus: string;    // Input focus ring/border classes
 }
 
+// Định nghĩa AppUser ở đây để dùng chung
+export interface AppUser {
+    uid: string;
+    displayName: string | null;
+    photoURL: string | null;
+    isAnonymous?: boolean;
+}
+
 export interface StudyLog {
   id: string;
   userId: string;
@@ -55,4 +64,26 @@ export interface LeaderboardEntry {
   totalMinutes: number;
   sessionsCount: number;
   lastActive: number;
+}
+
+// --- NEW TYPES FOR ENGLISH LEARNING ---
+
+export interface VocabItem {
+  id: string;
+  topicId: string;
+  word: string;          // appear
+  type: string;          // v, n, adj...
+  pronunciation: string; // /əˈpɪə(r)/
+  meaning: string;       // xuất hiện
+  level: string;         // B1
+  synonyms: string;      // emerge, show
+  antonyms: string;      // disappear
+  mastered?: boolean;    // Local state for progress
+}
+
+export interface Topic {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
 }

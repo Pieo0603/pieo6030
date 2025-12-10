@@ -1,7 +1,7 @@
+// @ts-ignore
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getAnalytics } from "firebase/analytics";
 
 // --- CẤU HÌNH FIREBASE (demnguocthi) ---
 const firebaseConfig = {
@@ -21,14 +21,5 @@ const db = getFirestore(app);
 // Truyền app trực tiếp vào getAuth để đảm bảo SDK nhận đúng instance đã cấu hình
 const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
-
-// Initialize Analytics (Safe check)
-if (typeof window !== "undefined") {
-  try {
-    getAnalytics(app);
-  } catch (e) {
-    console.warn("Analytics initialization skipped:", e);
-  }
-}
 
 export { db, auth, googleProvider };
